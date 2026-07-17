@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Friends Crypto</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #000; color: #fff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+.container { width: 100%; max-width: 420px; }
+h1 { text-align: center; margin-bottom: 24px; font-size: 24px; color: #FF5722; }
+.card { background: #111; border: 1px solid #222; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+input { width: 100%; padding: 14px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #333; background: #000; color: #fff; font-size: 16px; }
+input:focus { outline: none; border-color: #FF5722; }
+button { width: 100%; padding: 14px; border-radius: 8px; border: none; background: #FF5722; color: #fff; font-size: 16px; font-weight: bold; cursor: pointer; margin-bottom: 8px; }
+button:active { opacity: 0.7; }
+button.secondary { background: #333; }
+.badge { display: inline-block; padding: 4px 10px; border-radius: 4px; background: #222; font-size: 12px; margin-bottom: 12px; color: #aaa; }
+.hidden { display: none; }
+#chat { flex: 1; width: 100%; max-width: 600px; border: 1px solid #333; border-radius: 12px; background: #000; display: flex; flex-direction: column; height: 70vh; }
+#messages { flex: 1; padding: 12px; overflow-y: auto; font-size: 14px; line-height: 1.5; }
+#inputArea { display: flex; padding: 12px; border-top: 1px solid #222; }
+#inputArea input { flex: 1; margin: 0; margin-right: 8px; }
+#inputArea button { width: auto; padding: 10px 20px; margin: 0; }
+.sys { color: #888; font-style: italic; }
+.me { color: #FF5722; }
+.peer { color: #fff; }
+.header { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #222; }
+</style>
+</head>
+<body>
+
+<div class="container" id="loginScreen">
+  <h1>FRIENDS CRYPTO</h1>
+  <div class="card">
+    <span class="badge">OPCAO 1</span>
+    <input id="cCode" type="text" inputmode="numeric" maxlength="4" placeholder="Codigo (4 digitos)">
+    <input id="cWord" type="text" placeholder="Palavra secreta">
+    <button onclick="createRoom()">Criar Sala</button>
+  </div>
+  <div class="card">
+    <span class="badge">OPCAO 2</span>
+    <input id="jCode" type="text" inputmode="numeric" maxlength="4" placeholder="Codigo (4 digitos)">
+    <input id="jWord" type="text" placeholder="Palavra secreta">
+    <button class="secondary" onclick="joinRoom()">Entrar na Sala</button>
+  </div>
+</div>
+
+<div id="chat" class="hidden">
+  <div class="header">
+    <span id="roomLabel">Sala</span>
+    <button class="secondary" style="width:auto;padding:8px 14px;font-size:12px;" onclick="copyLink()">Copiar link</button>
+  </div>
+  <div id="messages"></div>
+  <div id="inputArea">
+    <input id="msg" placeholder="Mensagem criptografada...">
+    <button onclick="sendMessage()">Enviar</button>
+  </div>
+</div>
+
+<script>
+const apiBase = window.location.origin;
+let ws = null;
+let cryptoKey = null;
+let roomCode = '';
+let username = '';
+
+function getRandomName() {
+  const words = ['Falcao','Tigre','Lobo','Raposa','Onca','Aguia','Coruja','Jacare','Pantera','Cobra'];
+  const n = words[Math.floor(Math.random() * words.length)] + Math.floor(Math.random() * 100);
+  return n;
+}
+
+async function deriveKey(code, word) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(word), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: enc.encode(code), iterations: 100000, hash: 'SHA-256' }, keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+async function encrypt(key, text) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(text));
+  const buf = new Uint8Array(ct);
+  const merged = new Uint8Array(iv.length + buf.length);
+  merged.set(iv);
+  merged.set(buf, iv.length);
+  return btoa(String.fromCharCode(...merged));
+}
+
+async function decrypt(key, b64) {
+  const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const iv = raw.slice(0, 12);
+  const ct = raw.slice(12);
+  const dec = new TextDecoder();
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+  return dec.decode(pt);
+}
+
+async function setupWS(code) {
+  const word = code === roomCode ? document.getElementById('cWord').value : document.getElementById('jWord').value;
+  cryptoKey = await deriveKey(code, word);
+  const wsUrl = `ws://${window.location.host}/ws?room=${code}&key=${btoa(word)}`;
+  ws = new WebSocket(wsUrl);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('chat').classList.remove('hidden');
+    document.getElementById('roomLabel').textContent = `Sala ${code}`;
+    addSystem('Conectado com seguranca');
+  };
+  ws.onmessage = async (evt) => {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === 'encrypted') {
+      try {
+        const text = await decrypt(cryptoKey, msg.data);
+        const who = text.startsWith(username + ':') ? 'me' : 'peer';
+        addMessage(text, who);
+      } catch (e) { addSystem('Mensagem nao pode ser descriptografada', 'sys'); }
+    }
+  };
+  ws.onclose = () => addSystem('Desconectado', 'sys');
+  ws.onerror = () => addSystem('Erro na conexao', 'sys');
+}
+
+function addMessage(text, cls) {
+  const m = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = text;
+  m.appendChild(d);
+  m.scrollTop = m.scrollHeight;
+}
+
+function addSystem(text) { addMessage(text, 'sys'); }
+
+async function createRoom() {
+  const code = document.getElementById('cCode').value.trim();
+  const word = document.getElementById('cWord').value.trim();
+  if (code.length !== 4 || !word) return alert('Codigo 4 digitos e palavra sao obrigatorios');
+  const r = await fetch('/api/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, word }) });
+  if (!r.ok) return alert('Sala ja existe');
+  roomCode = code;
+  username = getRandomName();
+  await setupWS(code);
+}
+
+async function joinRoom() {
+  const code = document.getElementById('jCode').value.trim();
+  const word = document.getElementById('jWord').value.trim();
+  if (code.length !== 4 || !word) return alert('Codigo 4 digitos e palavra sao obrigatorios');
+  const r = await fetch('/api/join', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, word }) });
+  if (!r.ok) return alert('Sala nao encontrada ou palavra incorreta');
+  roomCode = code;
+  username = getRandomName();
+  await setupWS(code);
+}
+
+async function sendMessage() {
+  const input = document.getElementById('msg');
+  const text = input.value.trim();
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const payload = await encrypt(cryptoKey, username + ': ' + text);
+  ws.send(JSON.stringify({ type: 'encrypted', iv: '', data: payload }));
+  addMessage(username + ': ' + text, 'me');
+  input.value = '';
+}
+
+document.getElementById('msg').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+function copyLink() {
+  const url = `${window.location.origin}/?room=${roomCode}`;
+  navigator.clipboard.writeText(url).then(() => addSystem('Link copiado'));
+}
+
+const params = new URLSearchParams(window.location.search);
+if (params.has('room')) {
+  document.getElementById('jCode').value = params.get('room');
+}
+</script>
+</body>
+</html>

@@ -1,8 +1,9 @@
 package com.rafae.remoteterminal
 
-import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
-import android.text.TextUtils
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
@@ -13,7 +14,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import okhttp3.*
 import org.json.JSONObject
-import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
@@ -39,7 +40,6 @@ class MainActivity : AppCompatActivity() {
         btnConnect = findViewById(R.id.btnConnect)
         progress = findViewById(R.id.progress)
 
-        // Defaults
         inputHost.setText("192.168.18.14")
         inputPort.setText("3000")
 
@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
         val user = inputUser.text.toString().trim()
         val pass = inputPass.text.toString()
 
-        if (TextUtils.isEmpty(host) || TextUtils.isEmpty(user) || TextUtils.isEmpty(pass)) {
+        if (host.isEmpty() || user.isEmpty() || pass.isEmpty()) {
             Toast.makeText(this, "Preencha todos os campos", Toast.LENGTH_SHORT).show()
             return
         }
@@ -68,15 +68,23 @@ class MainActivity : AppCompatActivity() {
         progress.visibility = ProgressBar.VISIBLE
         btnConnect.isEnabled = false
 
-        val client = OkHttpClient()
-        val url = "http://$host:$port/api/login"
+        val client = OkHttpClient.Builder()
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
+
+        val apiUrl = if (host.startsWith("http")) {
+            host.trimEnd('/') + ":" + port + "/api/login"
+        } else {
+            "http://$host:$port/api/login"
+        }
+
         val json = JSONObject()
             .put("username", user)
             .put("password", pass)
             .toString()
 
         val body = RequestBody.create(MediaType.parse("application/json"), json)
-        val request = Request.Builder().url(url).post(body).build()
+        val request = Request.Builder().url(apiUrl).post(body).build()
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {

@@ -4,10 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
-import android.view.KeyEvent
 import android.view.View
-import android.view.inputmethod.EditorInfo
-import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -51,7 +48,13 @@ class TerminalActivity : AppCompatActivity() {
     }
 
     private fun conectarWebSocket() {
-        val wsUrl = "ws://$host:$port/terminal?token=$token"
+        val rawHost = host ?: "192.168.18.14"
+        val isHttps = rawHost.startsWith("https://")
+        val base = if (isHttps) rawHost else "http://$rawHost"
+        val wsScheme = if (isHttps) "wss" else "ws"
+        val hostOnly = if (isHttps) rawHost else rawHost
+        val wsUrl = "$wsScheme://$hostOnly:$port/terminal?token=$token"
+
         val request = Request.Builder().url(wsUrl).build()
         val listener = object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
@@ -94,11 +97,9 @@ class TerminalActivity : AppCompatActivity() {
 
         ws = client.newWebSocket(request, listener)
 
-        // Injeta hook para enviar input do terminal para WS
         webview.setWebViewClient(object : android.webkit.WebViewClient() {
             override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
                 if (ws != null) {
-                    // Envia dados do teclado virtual do xterm para o backend
                     webview.evaluateJavascript(
                         """
                         term.onData(function(data) {

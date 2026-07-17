@@ -1,9 +1,10 @@
 # Remote Terminal > Acesse o PC pelo celular
 
 ## Pastas
-- `pc-server/` -> API Node.js que roda no PC
-- `android-app/` -> App Android para acessar o terminal
+- `pc-server/` -> API Node.js que roda no PC (HTTPS/WSS)
+- `android-app/` -> App Android (aceita cert auto-assinado)
 - `tunnel/` -> Script para publicar o servidor na internet
+- `certs/` -> Certificado auto-assinado para HTTPS
 
 ---
 
@@ -28,6 +29,7 @@ Rode o servidor:
 npm start
 ```
 No app, digite o IP do PC (ex: 192.168.18.14) + porta 3000 + usuario/senha.
+O app ja aceita HTTPS com certificado auto-assinado.
 
 ---
 
@@ -70,23 +72,19 @@ ngrok http 3000 --host-header=localhost:3000
 
 4. Use a URL HTTPS fornecida no app Android.
 
-### Opcao 3: VPS / Cloud
-- Hospede o `pc-server` numa VPS barata (Hetzner, Oracle Free Tier)
-- Rode com: `PORT=3000 npm start`
-- Use a URL da VPS no app.
-
 ---
 
-## Seguranca
-- O servidor nao tem criptografia nativa — use apenas em rede local ou atraves de tunel HTTPS (localtunnel/ngrok).
-- Nao faca deploy publico sem HTTPS.
-- Adicione usuarios/senhas em `server.js` antes de expor.
+## Criptografia
+- **Local/LAN:** HTTPS/WSS com certificado auto-assinado
+- **Remoto via tunel:** HTTPS/WSS automatico (localtunnel/ngrok)
+- App Android aceita certificados auto-assinados automaticamente
+- Login e todo trafego do terminal sao criptografados em transito
 
 ## Portas
-- API: 3000
-- WS: 3000 (mesma porta, rota /terminal)
+- HTTPS: 3000
+- WSS: 3000 (mesma porta)
 
 ## Como funciona
-- API REST cria token de login
-- WebSocket estabiliza terminal real (cmd.exe) do PC
+- API REST cria token de login via HTTPS
+- WebSocket estabiliza terminal real (cmd.exe) do PC via WSS
 - Session persiste por usuario; reconexao mantem o terminal aberto

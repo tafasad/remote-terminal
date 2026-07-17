@@ -21,9 +21,7 @@ class TerminalActivity : AppCompatActivity() {
     private var port: String? = null
 
     private var ws: WebSocket? = null
-    private val client = OkHttpClient.Builder()
-        .readTimeout(0, TimeUnit.MILLISECONDS)
-        .build()
+    private val client: OkHttpClient by lazy { SslHelper.createTrustAllClient() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,11 +47,8 @@ class TerminalActivity : AppCompatActivity() {
 
     private fun conectarWebSocket() {
         val rawHost = host ?: "192.168.18.14"
-        val isHttps = rawHost.startsWith("https://")
-        val base = if (isHttps) rawHost else "http://$rawHost"
-        val wsScheme = if (isHttps) "wss" else "ws"
-        val hostOnly = if (isHttps) rawHost else rawHost
-        val wsUrl = "$wsScheme://$hostOnly:$port/terminal?token=$token"
+        val scheme = if (rawHost.startsWith("https")) "wss" else "ws"
+        val wsUrl = "$scheme://$rawHost:$port/terminal?token=$token"
 
         val request = Request.Builder().url(wsUrl).build()
         val listener = object : WebSocketListener() {
@@ -70,14 +65,10 @@ class TerminalActivity : AppCompatActivity() {
                         "output" -> webview.evaluateJavascript(
                             "term.write(" + JSONObject.quote(msg.getString("data")) + ");", null
                         )
-                        "exit" -> {
-                            webview.evaluateJavascript(
-                                "term.write(" + JSONObject.quote(">> " + msg.getString("data") + "\\n") + ");", null
-                            )
-                        }
-                        "error" -> {
-                            Toast.makeText(this@TerminalActivity, msg.getString("data"), Toast.LENGTH_LONG).show()
-                        }
+                        "exit" -> webview.evaluateJavascript(
+                            "term.write(" + JSONObject.quote(">> " + msg.getString("data") + "\\n") + ");", null
+                        )
+                        "error" -> Toast.makeText(this@TerminalActivity, msg.getString("data"), Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -128,8 +119,7 @@ class TerminalActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_HOST = "host"
         const val EXTRA_PORT = "port"
-        const val EXTRA_TOKEN = "token"
-        const val EXTRA_USER = "user"
+        const val EXTRA_TOKEN=***        const val EXTRA_USER = "user"
 
         fun start(activity: Activity, host: String, port: String, token: String, username: String) {
             val intent = Intent(activity, TerminalActivity::class.java).apply {

@@ -1,5 +1,5 @@
 const express = require('express');
-const http = require('http');
+const http = require('https');
 const WebSocket = require('ws');
 const pty = require('node-pty');
 const { v4: uuidv4 } = require('uuid');
@@ -7,14 +7,16 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const server = http.createServer(app);
+const server = http.createServer({
+  key: fs.readFileSync(path.join(__dirname, 'certs', 'server.key')),
+  cert: fs.readFileSync(path.join(__dirname, 'certs', 'server.crt'))
+});
 const wss = new WebSocket.Server({ server });
 
 const PORT = process.env.PORT || 3000;
 
 // ============================================================
 // CONFIG - usuarios autorizados (amigos + bots)
-// Adicione aqui: username: senha
 // ============================================================
 const USERS = {
   rafae: 'senha123',
@@ -22,10 +24,7 @@ const USERS = {
   amigo1: 'amigopass'
 };
 
-// Sessoes ativas: token -> { ws, ptyProcess, owner, created }
 const sessions = new Map();
-
-// Arquivo simples de log
 const LOG_FILE = path.join(__dirname, 'terminal.log');
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
@@ -38,7 +37,6 @@ function log(msg) {
 // ----------------------------------------
 app.use(express.json());
 
-// Criar token de acesso
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
@@ -53,28 +51,22 @@ app.post('/api/login', (req, res) => {
   res.json({ token, username });
 });
 
-// Status do servidor e sessoes
 app.get('/api/status', (req, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token || !sessions.has(token)) {
     return res.status(401).json({ error: 'Nao autorizado' });
   }
   const sess = sessions.get(token);
-  res.json({
-    user: sess.owner,
-    active_session: !!sess.ptyProcess,
-    uptime: process.uptime()
-  });
+  res.json({ user: sess.owner, active_session: !!sess.ptyProcess, uptime: process.uptime() });
 });
 
-// Health check (sem auth)
 app.get('/api/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
 // ----------------------------------------
 // WebSocket - Terminal
 // ----------------------------------------
 wss.on('connection', (ws, req) => {
-  const token = new URL(req.url, 'http://localhost').searchParams.get('token');
+  const token = new URL(req.url, 'https://localhost').searchParams.get('token');
   
   if (!token || !sessions.has(token)) {
     ws.send(JSON.stringify({ type: 'error', data: 'Token invalido' }));
@@ -86,11 +78,9 @@ wss.on('connection', (ws, req) => {
   sess.ws = ws;
   log(`WS CONNECT ${sess.owner}`);
 
-  // Se ja tem pty, avisa que pode continuar
   if (sess.ptyProcess) {
     ws.send(JSON.stringify({ type: 'welcome', data: 'Sessao existente restaurada' }));
   } else {
-    // Cria novo PTY no Windows (cmd.exe)
     const ptyProcess = pty.spawn('cmd.exe', [], {
       name: 'xterm-256color',
       cwd: process.env.USERPROFILE || 'C:\\',
@@ -102,11 +92,8 @@ wss.on('connection', (ws, req) => {
     sess.ptyProcess = ptyProcess;
 
     ptyProcess.onData((data) => {
-      try {
-        ws.send(JSON.stringify({ type: 'output', data }));
-      } catch (e) {
-        log(`ERRO WS SEND ${sess.owner}: ${e.message}`);
-      }
+      try { ws.send(JSON.stringify({ type: 'output', data })); }
+      catch (e) { log(`ERRO WS SEND ${sess.owner}: ${e.message}`); }
     });
 
     ptyProcess.onExit(({ exitCode, signal }) => {
@@ -115,34 +102,24 @@ wss.on('connection', (ws, req) => {
       cleanup(token);
     });
 
-    ws.send(JSON.stringify({ type: 'welcome', data: 'Terminal conectado' }));
+    ws.send(JSON.stringify({ type: 'welcome', data: 'Terminal conectado (HTTPS/WSS)' }));
   }
 
   ws.on('message', (msg) => {
     try {
       const parsed = JSON.parse(msg);
-      if (parsed.type === 'input') {
-        if (sess.ptyProcess) {
-          sess.ptyProcess.write(parsed.data);
-        }
-      } else if (parsed.type === 'resize') {
-        if (sess.ptyProcess) {
-          sess.ptyProcess.resize(parsed.cols, parsed.rows);
-        }
+      if (parsed.type === 'input' && sess.ptyProcess) {
+        sess.ptyProcess.write(parsed.data);
+      } else if (parsed.type === 'resize' && sess.ptyProcess) {
+        sess.ptyProcess.resize(parsed.cols, parsed.rows);
       }
     } catch (e) {
       ws.send(JSON.stringify({ type: 'error', data: 'Mensagem invalida' }));
     }
   });
 
-  ws.on('close', () => {
-    log(`WS CLOSE ${sess.owner}`);
-    // Nao mata o pty - permite reconexao
-  });
-
-  ws.on('error', (err) => {
-    log(`WS ERROR ${sess.owner}: ${err.message}`);
-  });
+  ws.on('close', () => { log(`WS CLOSE ${sess.owner}`); });
+  ws.on('error', (err) => { log(`WS ERROR ${sess.owner}: ${err.message}`); });
 });
 
 function cleanup(token) {
@@ -153,8 +130,7 @@ function cleanup(token) {
   }
 }
 
-// Inicia servidor
 server.listen(PORT, '0.0.0.0', () => {
-  log(`Servidor rodando em http://0.0.0.0:${PORT}`);
+  log(`Servidor HTTPS rodando em https://0.0.0.0:${PORT}`);
   log(`Usuarios configurados: ${Object.keys(USERS).join(', ')}`);
 });

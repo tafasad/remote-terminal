@@ -2,14 +2,12 @@ package com.rafae.remoteterminal
 
 import android.app.Activity
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ProgressBar
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import okhttp3.*
@@ -25,10 +23,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnConnect: Button
     private lateinit var progress: ProgressBar
 
-    private var token: String? = null
-    private var username: String? = null
+    private val httpsClient: OkHttpClient by lazy { SslHelper.createTrustAllClient() }
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_login)
@@ -68,14 +64,10 @@ class MainActivity : AppCompatActivity() {
         progress.visibility = ProgressBar.VISIBLE
         btnConnect.isEnabled = false
 
-        val client = OkHttpClient.Builder()
-            .readTimeout(15, TimeUnit.SECONDS)
-            .build()
-
         val apiUrl = if (host.startsWith("http")) {
-            host.trimEnd('/') + ":" + port + "/api/login"
+            "${host.trimEnd('/')}:$port/api/login"
         } else {
-            "http://$host:$port/api/login"
+            "https://$host:$port/api/login"
         }
 
         val json = JSONObject()
@@ -86,8 +78,8 @@ class MainActivity : AppCompatActivity() {
         val body = RequestBody.create(MediaType.parse("application/json"), json)
         val request = Request.Builder().url(apiUrl).post(body).build()
 
-        client.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
+        httpsClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: java.io.IOException) {
                 runOnUiThread {
                     progress.visibility = ProgressBar.GONE
                     btnConnect.isEnabled = true
@@ -107,11 +99,11 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
                 val resp = JSONObject(response.body()?.string() ?: "{}")
-                token = resp.getString("token")
-                username = resp.getString("username")
+                val token = resp.getString("token")
+                val username = resp.getString("username")
 
                 runOnUiThread {
-                    TerminalActivity.start(this@MainActivity, host, port, token!!, username!!)
+                    TerminalActivity.start(this@MainActivity, host, port, token, username)
                     Toast.makeText(this@MainActivity, "Conectado como $username", Toast.LENGTH_SHORT).show()
                 }
             }

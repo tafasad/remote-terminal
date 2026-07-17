@@ -11,6 +11,7 @@ const wss = new WebSocket.Server({ server });
 
 const PORT = process.env.PORT || 3000;
 const rooms = new Map();
+let tunnelUrl = '';
 
 function deriveKey(code, word) {
   return crypto.pbkdf2Sync(word, code, 100000, 32, 'sha256').toString('hex');
@@ -22,10 +23,7 @@ function encryptMessage(keyHex, plaintext) {
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return {
-    iv: iv.toString('base64'),
-    data: Buffer.concat([encrypted, tag]).toString('base64')
-  };
+  return { iv: iv.toString('base64'), data: Buffer.concat([encrypted, tag]).toString('base64') };
 }
 
 function decryptMessage(keyHex, ivB64, dataB64) {
@@ -61,6 +59,16 @@ app.post('/api/join', (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/tunnel-url', (req, res) => {
+  const url = (req.body && req.body.url) ? req.body.url.trim() : '';
+  if (url) tunnelUrl = url;
+  res.json({ ok: true, tunnelUrl });
+});
+
+app.get('/api/tunnel-url', (req, res) => {
+  res.json({ tunnelUrl });
+});
+
 wss.on('connection', (ws, req) => {
   const params = new URL(req.url, 'http://localhost').searchParams;
   const room = params.get('room');
@@ -87,6 +95,7 @@ wss.on('connection', (ws, req) => {
   ws.room = room;
   ws.isAlive = true;
   ws.send(JSON.stringify({ type: 'joined' }));
+  ws.send(JSON.stringify({ type: 'tunnel_url', url: tunnelUrl }));
 
   ws.on('message', (raw) => {
     const parsed = JSON.parse(raw);

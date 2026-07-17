@@ -1,32 +1,36 @@
-@echo.
-title Remote Terminal - Servidor + Tunel Publico
+@echo off
+title Friends Crypto - Rotador de Tunel
 color 1F
 cls
 echo.
 echo ===========================================
-echo    REMOTE TERMINAL - PUBLICAR NA INTERNET
+echo    FRIENDS CRYPTO - TUNEL COM ROTACAO
 echo ===========================================
 echo.
-
-cd /d "%~dp0pc-server"
-
-echo [1/3] Iniciando servidor ...
+echo Iniciando servidor...
+cd /d "%~dp0"
 start "RemoteTerminal-Server" cmd /c "npm start"
 
-:: Espera 3s pro servidor subir
 timeout /t 3 /nobreak >nul
+echo Servidor ativo.
+echo Criando/atualizando tunel publico...
+echo URL atual sera enviada para o servidor a cada 30s.
+echo Use https://xxxx.loca.lt no celular.
+echo.
+echo Pressione CTRL+C aqui para parar.
+echo.
 
-echo [2/3] Criando tunel publico (localtunnel) ...
-echo.
-echo      AGUARDE - vai aparecer uma URL tipo:
-echo      https://xxxx.loca.lt
-echo.
-echo      ESSA URL e o que voce coloca no app.
-echo.
+:loop
+for /f "delims=" %%i in ('lt --port 3000 ^| findstr /i "your url is"') do (
+  set line=%%i
+)
+set url=
+for /f "tokens=3 delims= " %%a in ("%line%") do set url=%%a
 
-lt --port 3000 > tunnel_log.txt 2>&1
+if defined url (
+  curl -s -X POST http://localhost:3000/api/tunnel-url -H "Content-Type: application/json" -d "{\"url\":\"%url%\"}" >nul
+  echo Tunel atual: %url%
+)
 
-echo.
-echo [3/3] Tunel encerrado.
-echo.
-pause
+timeout /t 30 /nobreak >nul
+goto loop

@@ -117,11 +117,17 @@ async function setupWS(code) {
         const who = text.startsWith(username + ':') ? 'me' : 'peer';
         addMessage(text, who);
       } catch (e) { addSystem('Mensagem nao pode ser descriptografada', 'sys'); }
+    } else if (msg.type === 'tunnel_url' && msg.url) {
+      if (window.location.protocol === 'http:') {
+        const next = 'https://' + msg.url.replace(/^https?:\/\//, '') + '/?room=' + roomCode;
+        addSystem('Novo endereco de acesso: ' + next, 'sys');
+        setTimeout(() => { window.location.href = next; }, 1000);
+      }
     }
   };
   ws.onclose = () => addSystem('Desconectado', 'sys');
   ws.onerror = () => addSystem('Erro na conexao', 'sys');
-}
+};
 
 function addMessage(text, cls) {
   const m = document.getElementById('messages');

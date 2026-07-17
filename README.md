@@ -1,90 +1,35 @@
-# Remote Terminal > Acesse o PC pelo celular
+# Friends Crypto Chat
 
-## Pastas
-- `pc-server/` -> API Node.js que roda no PC (HTTPS/WSS)
-- `android-app/` -> App Android (aceita cert auto-assinado)
-- `tunnel/` -> Script para publicar o servidor na internet
-- `certs/` -> Certificado auto-assinado para HTTPS
+Servidor Node.js + interface web para chat E2EE entre amigos e bots.
+Roda no Termux, PC ou servidor. Criptografia AES-256-GCM com chave derivada de palavra secreta via PBKDF2.
 
----
+## Como rodar
 
-## Setup rapido
-
-### 1. Servidor (PC)
 ```bash
-cd C:\Users\rafae\Projetos\remote-terminal\pc-server
+git clone https://github.com/tafasad/remote-terminal.git
+cd remote-terminal
 npm install
-```
-Edite `server.js` e adicione usuarios/senhas em `USERS`.
-
-### 2. App (Android)
-1. Abra o Android Studio
-2. Importe a pasta `android-app`
-3. Sincronize Gradle
-4. Compile e instale no celular
-
-### 3. Testar localmente
-Rode o servidor:
-```bash
-npm start
-```
-No app, digite o IP do PC (ex: 192.168.18.14) + porta 3000 + usuario/senha.
-O app ja aceita HTTPS com certificado auto-assinado.
-
----
-
-## Acesso remoto (fora de casa)
-
-### Opcao 1: localtunnel (recomendado)
-Nao precisa de conta, nem configurar roteador.
-
-1. Instale o localtunnel:
-```bash
-npm install -g localtunnel
-```
-
-2. Rode o servidor:
-```bash
 npm start
 ```
 
-3. Em outro terminal, abra o tunel:
-```bash
-lt --port 3000
-```
+Acesse `http://IP_DO_SERVIDOR:3000` pelo celular ou PC.
 
-4. O localtunnel vai mostrar uma URL, tipo:
-```
-your url is: https://abc123.loca.lt
-```
+## Como usar
 
-5. No app Android, cole essa URL no campo de host (com https://).
+Opcao 1 — Criar sala: digite codigo de 4 digitos + palavra secreta.
+Opcao 2 — Entrar na sala: digite o mesmo codigo + mesma palavra.
 
-OBS: A porta 3000 nao precisa estar aberta no roteador. So precisa de saida de internet.
+Ambos os lados conectam em tempo real. Trafego criptografado de ponta a ponta.
 
-### Opcao 2: ngrok
-1. Faca conta em https://ngrok.com
-2. Instale o ngrok no Windows
-3. Rode:
-```bash
-ngrok http 3000 --host-header=localhost:3000
-```
+## Estrutura
 
-4. Use a URL HTTPS fornecida no app Android.
+- `server.js` — HTTP + WebSocket + criptografia server-side (PBKDF2 100k iteracoes, AES-256-GCM)
+- `public/index.html` — cliente unico, roda em qualquer browser
+- `package.json` — dependencias
 
----
+## Seguranca
 
-## Criptografia
-- **Local/LAN:** HTTPS/WSS com certificado auto-assinado
-- **Remoto via tunel:** HTTPS/WSS automatico (localtunnel/ngrok)
-- App Android aceita certificados auto-assinados automaticamente
-- Login e todo trafego do terminal sao criptografados em transito
-
-## Portas
-- HTTPS: 3000
-- WSS: 3000 (mesma porta)
-
-## Como funciona
-- API REST cria token de login via HTTPS
-- WebSocket estabiliza terminal real (cmd.exe) do PC via WSS
-- Session persiste por usuario; reconexao mantem o terminal aberto
+- Palavra secreta deriva chave AES-256 via PBKDF2-SHA256
+- IV aleatorio de 12 bytes por mensagem
+- Servidor nao armazena nem descriptografa mensagens
+- Sem tokens ou credenciais no codigo
